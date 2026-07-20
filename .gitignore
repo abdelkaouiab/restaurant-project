@@ -1,0 +1,38 @@
+# Secrets et configuration locale
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+
+# Java / Maven
+target/
+*.class
+.mvn/timing.properties
+
+# Node / Vite
+node_modules/
+dist/
+.vite/
+coverage/
+*.tsbuildinfo
+
+# IDE et système
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Journaux et fichiers temporaires
+*.log
+logs/
+tmp/
+*.tmp
+
+# Rapports locaux de tests et de sécurité
+dependency-reduced-pom.xml
+.scannerwork/
