@@ -2,7 +2,7 @@
 
 ## État constaté
 
-Le dépôt ne contient actuellement aucun module applicatif, fichier Maven, manifeste npm, source, test, migration ou configuration. L'architecture décrite ici est la cible proposée pour guider les étapes futures ; elle n'est pas encore implémentée.
+Le dépôt contient le socle `backend/` Spring Boot sous le package racine `com.restaurant.management`. Les couches sont créées, mais seules les préoccupations techniques de démarrage, sécurité, santé, erreurs et OpenAPI sont implémentées. Il n'existe encore aucun module métier, entité, repository concret ou migration Flyway. Le frontend n'est pas créé.
 
 ## Principes
 
@@ -12,7 +12,7 @@ Le projet peut être organisé en deux modules indépendants : `backend/` et, pl
 
 ## Backend en couches
 
-Le package racine sera choisi lors de la création du socle. Sous celui-ci :
+Sous le package racine `com.restaurant.management` :
 
 | Couche | Responsabilité | Ne doit pas faire |
 |---|---|---|
@@ -60,12 +60,22 @@ Le frontend React sera créé dans une étape distincte. Il pourra gérer la nav
 - OpenAPI documentera uniquement les contrats réellement disponibles.
 - Une stratégie de versionnement d'API sera décidée avant la première API stable.
 
+## Décisions actées à l'étape 1
+
+- module backend sous `backend/` ;
+- coordonnées Maven `com.restaurant:restaurant-backend` ;
+- package racine `com.restaurant.management` ;
+- cible Java 21 et Maven Wrapper 3.9.9 ;
+- Spring Boot 3.5.16 et springdoc 2.8.17 ;
+- refus HTTP par défaut, avec seule la route `GET /api/health` publique ;
+- Actuator limité à `health`, détails masqués et route protégée ;
+- H2 réservé aux tests de démarrage, PostgreSQL restant la base applicative cible.
+
 ## Décisions à différer
 
 Les points suivants ne sont volontairement pas tranchés à l'étape 0 :
 
-- nom du projet, group ID Maven et package racine ;
-- version exacte de Spring Boot et de PostgreSQL ;
+- version majeure exacte de PostgreSQL ;
 - authentification par session/cookie ou autre mécanisme ;
 - fournisseur d'identité éventuel ;
 - structure détaillée par domaine ;

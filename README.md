@@ -1,12 +1,12 @@
 # Application interne de gestion de restaurant
 
-Ce dépôt accueillera une application web réservée au personnel d'un restaurant. L'étape 0 couvre uniquement l'analyse du dépôt et la préparation de sa documentation. Aucune fonctionnalité métier n'est encore implémentée.
+Ce dépôt accueille une application web réservée au personnel d'un restaurant. Le socle backend Spring Boot est initialisé ; aucune fonctionnalité métier n'est encore implémentée.
 
 ## État actuel
 
-À la date du 20 juillet 2026, le dépôt ne contient aucun code applicatif, aucun fichier de construction et aucun historique de migration. Il n'existe donc pas encore de backend Spring Boot, de frontend React, de schéma PostgreSQL, de test automatisé ni de dépendance déclarée.
+À la date du 21 juillet 2026, le dépôt contient un module `backend/` compilable ciblant Java 21, une sécurité restrictive, une route publique de santé, un format d'erreur commun et des tests de démarrage. Il ne contient encore ni module métier, ni entité, ni migration de schéma, ni frontend React.
 
-L'inspection n'a révélé aucun secret applicatif dans les fichiers suivis. Le dépôt ne possède actuellement aucun commit ni dépôt distant configuré. Les fichiers internes de `.git/` ne font pas partie de l'application et ne doivent pas être modifiés manuellement.
+L'inspection n'a révélé aucun secret applicatif. Les identifiants PostgreSQL sont externalisés et `DB_PASSWORD` est obligatoire hors profil de test. Les fichiers internes de `.git/` ne font pas partie de l'application et ne doivent pas être modifiés manuellement.
 
 ## Périmètre prévu
 
@@ -23,17 +23,17 @@ Rôles prévus :
 
 ## Technologies cibles
 
-Backend : Java 21, Spring Boot 3.x, Maven, Spring Web, Spring Security, Spring Data JPA, Jakarta Bean Validation, PostgreSQL, Flyway, OpenAPI, JUnit 5, Mockito et Testcontainers.
+Backend : Java 21, Spring Boot 3.5.16, Maven 3.9.9 via Wrapper, Spring Web, Spring Security, Spring Data JPA, Jakarta Bean Validation, PostgreSQL, Flyway, springdoc OpenAPI 2.8.17, Actuator, JUnit 5, Mockito et Testcontainers.
 
 Frontend, lors d'une étape séparée : React, Vite, TypeScript, React Router et Axios.
 
-Les versions précises de Spring Boot, PostgreSQL, Node.js et des bibliothèques seront fixées au moment de leur introduction, après vérification de leur compatibilité et de leur support. Aucune version non constatée n'est inventée à cette étape.
+Les dépendances couvertes par Spring Boot utilisent sa gestion de versions. Spring Boot 3.5.16 est la dernière version 3.x communautaire publiée, mais cette ligne arrive en fin de support OSS et devra faire l'objet d'une décision de mise à niveau lors d'une étape dédiée.
 
 ## Environnement constaté
 
 | Outil | Version constatée | Situation |
 |---|---:|---|
-| Java | OpenJDK 17.0.17 | Non conforme : Java 21 requis |
+| Java | OpenJDK 21.0.11 | Conforme à Java 21 requis |
 | Maven | 3.9.9 | Disponible |
 | Node.js | 24.10.0 | Disponible, version cible à fixer à l'étape frontend |
 | npm | 11.6.0 | Disponible |
@@ -47,17 +47,22 @@ Ces valeurs décrivent la machine inspectée et ne constituent pas encore un con
 
 ```text
 restaurant project/
-└── .git/                 # métadonnées Git uniquement
-```
-
-Après l'étape 0 :
-
-```text
-restaurant project/
 ├── .env.example
 ├── .gitignore
 ├── AGENTS.md
 ├── README.md
+├── backend/
+│   ├── .mvn/wrapper/maven-wrapper.properties
+│   ├── mvnw
+│   ├── mvnw.cmd
+│   ├── pom.xml
+│   └── src/
+│       ├── main/
+│       │   ├── java/com/restaurant/management/
+│       │   └── resources/
+│       └── test/
+│           ├── java/com/restaurant/management/
+│           └── resources/
 └── docs/
     ├── architecture.md
     └── security-requirements.md
@@ -65,7 +70,7 @@ restaurant project/
 
 ## Arborescence cible proposée
 
-Cette structure est une proposition pour les prochaines étapes, pas du code déjà créé :
+Cette structure complète le backend existant avec les éléments futurs, sans les créer maintenant :
 
 ```text
 restaurant project/
@@ -100,7 +105,18 @@ restaurant project/
 └── README.md
 ```
 
-Le nom du package racine, les modules exacts et l'éventuelle infrastructure Docker devront être décidés à l'étape de création du socle.
+Le package racine du backend est `com.restaurant.management`. L'éventuelle infrastructure Docker et la structure métier détaillée restent à décider dans leurs étapes respectives.
+
+## Routes actuellement disponibles
+
+| Route | Accès | Contenu |
+|---|---|---|
+| `GET /api/health` | public | `{"status":"UP"}` uniquement |
+| `/actuator/health` | authentification requise | Actuator sans détails, seul endpoint Actuator exposé |
+| `/api-docs` | authentification requise | contrat OpenAPI |
+| `/swagger-ui.html` | authentification requise | interface OpenAPI |
+
+Tant que le véritable mécanisme d'authentification n'est pas implémenté, aucune identité n'est créée par défaut : les routes protégées répondent donc `401`.
 
 ## Vérifier l'environnement
 
@@ -119,11 +135,33 @@ docker compose version
 
 Avant de créer le backend, installer ou sélectionner un JDK 21 puis confirmer que `java -version` et la ligne `Java version` de `mvn -version` indiquent tous deux Java 21.
 
-Les commandes suivantes deviendront applicables uniquement après la création des modules correspondants :
+## Compiler et tester le backend
 
 ```bash
-cd backend && ./mvnw verify
-cd frontend && npm install && npm run build
+cd backend
+./mvnw clean verify
+```
+
+Le build exige un JDK 21 ou supérieur et produit du bytecode Java 21. Le profil `test` utilise une base H2 en mémoire pour les tests de démarrage ; Testcontainers PostgreSQL est déjà disponible pour les futurs tests d'intégration.
+
+## Lancer en développement
+
+Une instance PostgreSQL et un mot de passe local sont requis :
+
+```bash
+cd backend
+export DB_PASSWORD='valeur-locale-non-commitee'
+export SPRING_PROFILES_ACTIVE=dev
+./mvnw spring-boot:run
+```
+
+Les autres paramètres facultatifs sont documentés dans `.env.example`. Le fichier `.env` sert de référence locale mais n'est pas chargé automatiquement par Spring Boot : exportez ses variables dans le processus avant le lancement.
+
+Vérification minimale après démarrage :
+
+```bash
+curl -i http://localhost:8080/api/health
+curl -i http://localhost:8080/actuator/health
 ```
 
 ## Documentation
@@ -134,9 +172,9 @@ cd frontend && npm install && npm run build
 
 ## Limites actuelles
 
-- aucun socle Spring Boot ou React ;
-- aucune connexion PostgreSQL ni migration Flyway ;
-- aucune authentification ou autorisation ;
-- aucun test exécutable ;
-- aucune commande de compilation/lancement applicatif tant que les modules ne sont pas créés ;
-- Java 21 n'est pas actif dans l'environnement inspecté.
+- aucun frontend React ;
+- aucune fonctionnalité, entité ou migration métier ;
+- PostgreSQL est configuré mais aucune instance n'est fournie par le dépôt ;
+- aucun mécanisme d'authentification ni compte utilisateur ;
+- OpenAPI et Actuator sont protégés mais inutilisables jusqu'à l'ajout de l'authentification ;
+- le lancement en profil `dev` nécessite une instance PostgreSQL accessible et correctement configurée.
