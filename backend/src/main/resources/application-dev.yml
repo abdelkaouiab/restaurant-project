@@ -5,6 +5,12 @@ spring:
   jpa:
     show-sql: false
 
+server:
+  servlet:
+    session:
+      cookie:
+        secure: ${APP_COOKIE_SECURE:false}
+
 logging:
   level:
     com.restaurant.management: DEBUG

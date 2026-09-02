@@ -7,19 +7,28 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+
+import com.restaurant.management.security.SessionSecurityValidationFilter;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(controllers = TestErrorController.class)
+@WebMvcTest(
+        controllers = TestErrorController.class,
+        properties = "logging.level.com.restaurant.management.exception.GlobalExceptionHandler=OFF"
+)
 @AutoConfigureMockMvc(addFilters = false)
 @Import(GlobalExceptionHandler.class)
 class GlobalExceptionHandlerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @MockitoBean
+    private SessionSecurityValidationFilter sessionSecurityValidationFilter;
 
     @Test
     void validationErrorUsesCommonFormat() throws Exception {

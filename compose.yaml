@@ -1,0 +1,177 @@
+name: ${COMPOSE_PROJECT_NAME:-restaurant}
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  postgres:
+    image: postgres:17.11-alpine3.24
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-restaurant}
+      POSTGRES_USER: ${DB_USERNAME:-restaurant_app}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD doit etre defini dans l environnement}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256 --auth-local=scram-sha-256
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - database
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 768m
+    cpus: "1.00"
+    stop_grace_period: 30s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: restaurant-backend:${APP_IMAGE_TAG:-local}
+    restart: unless-stopped
+    init: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+        restart: true
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${DB_NAME:-restaurant}
+      DB_USERNAME: ${DB_USERNAME:-restaurant_app}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD doit etre defini dans l environnement}
+      DB_POOL_MAX_SIZE: ${DB_POOL_MAX_SIZE:-20}
+      DB_POOL_MIN_IDLE: ${DB_POOL_MIN_IDLE:-2}
+      APP_CORS_ALLOWED_ORIGINS: ${APP_PUBLIC_ORIGIN:-https://localhost:8443}
+      APP_PRODUCT_IMAGES_DIRECTORY: /var/lib/restaurant/product-images
+      APP_RESTAURANT_TIME_ZONE: ${APP_RESTAURANT_TIME_ZONE:-Africa/Casablanca}
+      APP_SESSION_TIMEOUT: ${APP_SESSION_TIMEOUT:-15m}
+      APP_BCRYPT_STRENGTH: ${APP_BCRYPT_STRENGTH:-12}
+      APP_LOGIN_MAX_ATTEMPTS: ${APP_LOGIN_MAX_ATTEMPTS:-5}
+      APP_LOGIN_ATTEMPT_WINDOW: ${APP_LOGIN_ATTEMPT_WINDOW:-15m}
+      APP_PRODUCT_IMAGE_MAX_SIZE: ${APP_PRODUCT_IMAGE_MAX_SIZE:-5MB}
+      APP_PRODUCT_IMAGE_MAX_REQUEST_SIZE: ${APP_PRODUCT_IMAGE_MAX_REQUEST_SIZE:-6MB}
+      APP_PRODUCT_IMAGE_MAX_BYTES: ${APP_PRODUCT_IMAGE_MAX_BYTES:-5242880}
+      APP_PRODUCT_IMAGE_MAX_PIXELS: ${APP_PRODUCT_IMAGE_MAX_PIXELS:-12000000}
+      MANAGEMENT_SERVER_ADDRESS: 127.0.0.1
+      MANAGEMENT_SERVER_PORT: "8081"
+      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--XX:MaxRAMPercentage=75.0 -Djava.io.tmpdir=/tmp}
+    expose:
+      - "8080"
+    volumes:
+      - product-images:/var/lib/restaurant/product-images
+    networks:
+      - edge
+      - database
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/api/health | grep -q '\"status\":\"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    pids_limit: 256
+    mem_limit: 768m
+    cpus: "1.00"
+    stop_grace_period: 30s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: restaurant-frontend:${APP_IMAGE_TAG:-local}
+    restart: unless-stopped
+    init: true
+    expose:
+      - "8080"
+    networks:
+      - edge
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/_health | grep -q UP"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    pids_limit: 128
+    mem_limit: 128m
+    cpus: "0.50"
+
+  reverse-proxy:
+    build:
+      context: ./docker/reverse-proxy
+      dockerfile: Dockerfile
+    image: restaurant-reverse-proxy:${APP_IMAGE_TAG:-local}
+    restart: unless-stopped
+    init: true
+    user: "${PROXY_UID:-101}:${PROXY_GID:-101}"
+    entrypoint: ["nginx", "-g", "daemon off;"]
+    depends_on:
+      backend:
+        condition: service_healthy
+        restart: true
+      frontend:
+        condition: service_healthy
+        restart: true
+    ports:
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_HTTP_PORT:-8080}:8080"
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_HTTPS_PORT:-8443}:8443"
+    volumes:
+      - ${TLS_CERTIFICATE_PATH:?TLS_CERTIFICATE_PATH doit pointer vers fullchain.pem}:/etc/nginx/tls/fullchain.pem:ro
+      - ${TLS_PRIVATE_KEY_PATH:?TLS_PRIVATE_KEY_PATH doit pointer vers privkey.pem}:/etc/nginx/tls/privkey.pem:ro
+    networks:
+      - edge
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/_health | grep -q UP"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    pids_limit: 128
+    mem_limit: 128m
+    cpus: "0.50"
+    stop_grace_period: 15s
+
+volumes:
+  postgres-data:
+  product-images:
+
+networks:
+  edge:
+    driver: bridge
+  database:
+    driver: bridge
+    internal: true

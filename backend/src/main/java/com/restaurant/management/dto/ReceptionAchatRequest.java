@@ -1,0 +1,3 @@
+package com.restaurant.management.dto;
+import jakarta.validation.Valid; import jakarta.validation.constraints.*; import java.util.List;
+public record ReceptionAchatRequest(@NotEmpty @Size(max=100) List<@Valid LigneReceptionAchatRequest> lignes){}

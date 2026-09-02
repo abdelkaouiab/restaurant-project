@@ -86,3 +86,18 @@ Pour chaque ressource protégée, tester au minimum :
 - erreur interne : aucune information sensible exposée.
 
 La baseline sera affinée avec le modèle d'authentification et l'environnement de déploiement, qui ne sont pas encore choisis.
+
+## Paramètres retenus pour l'authentification par session
+
+L'étape 3 retient une session serveur avec les propriétés suivantes :
+
+- `RESTAURANT_SESSION` est `HttpOnly`, `SameSite=Strict` et `Secure` hors développement HTTP local ;
+- une session expire après 30 minutes d'inactivité par défaut ;
+- le jeton CSRF est obtenu via `GET /api/auth/csrf` et renvoyé dans `X-XSRF-TOKEN` pour toute requête modifiant l'état ;
+- les origines CORS sont fournies par `APP_CORS_ALLOWED_ORIGINS`, sans joker ;
+- BCrypt utilise un coût de 12 par défaut ;
+- cinq échecs sur quinze minutes bloquent temporairement le couple IP/e-mail ;
+- les échecs ne distinguent jamais compte absent, secret incorrect ou compte désactivé ;
+- le principal stocké en session efface le hash après authentification.
+
+`APP_COOKIE_SECURE=false` est réservé au profil `dev` sur HTTP local. Il doit rester `true` derrière HTTPS.

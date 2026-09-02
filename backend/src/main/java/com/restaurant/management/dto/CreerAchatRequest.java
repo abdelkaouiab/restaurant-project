@@ -1,0 +1,4 @@
+package com.restaurant.management.dto;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+public record CreerAchatRequest(@NotNull @Positive Long fournisseurId){}

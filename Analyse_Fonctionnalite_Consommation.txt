@@ -1,0 +1,477 @@
+ANALYSE FACTUELLE DE LA FONCTIONNALITÉ « CONSOMMATION »
+=======================================================
+
+Date de vérification : 2 septembre 2026
+
+Aucun fichier source n’a été modifié pendant cette analyse.
+
+Limite de traçabilité
+---------------------
+
+Une grande partie du backend et tout le frontend sont actuellement non suivis par Git.
+La distinction « créé/modifié » ci-dessous repose donc sur les fichiers dédiés, leurs
+références et leurs dates locales de création/modification, pas sur un historique de commits.
+
+
+1. FICHIERS CRÉÉS
+-----------------
+
+Backend :
+
+- backend/src/main/java/com/restaurant/management/controller/ConsommationController.java
+- backend/src/main/java/com/restaurant/management/service/ConsommationService.java
+- backend/src/main/java/com/restaurant/management/service/ConsommationPdfService.java
+- backend/src/main/java/com/restaurant/management/service/PeriodeConsommation.java
+- backend/src/main/java/com/restaurant/management/repository/ConsommationRepository.java
+- backend/src/main/java/com/restaurant/management/dto/ConsommationResponse.java
+- backend/src/main/java/com/restaurant/management/dto/ConsommationProduitResponse.java
+- backend/src/main/java/com/restaurant/management/dto/ConsommationIngredientResponse.java
+- backend/src/test/java/com/restaurant/management/controller/ConsommationIntegrationTest.java
+
+Frontend :
+
+- frontend/src/features/consommation/ConsommationPage.tsx
+- frontend/src/features/consommation/consommationApi.ts
+- frontend/src/features/consommation/types.ts
+- frontend/src/features/consommation/ConsommationPage.test.tsx
+
+
+2. FICHIERS EXISTANTS MODIFIÉS
+------------------------------
+
+- frontend/src/routes/AppRoutes.tsx
+  Import et rendu de ConsommationPage.
+
+- frontend/src/routes/routeConfig.ts
+  Déclaration de la route et restriction par rôles.
+
+- frontend/src/styles.css
+  Disposition des résultats, zone d’export et adaptation responsive.
+
+Aucun fichier backend existant n’a dû être adapté spécifiquement pour intégrer cette
+fonctionnalité.
+
+
+3. ARCHITECTURE BACKEND
+-----------------------
+
+- Controller : ConsommationController
+- Service métier : ConsommationService
+- Service PDF : ConsommationPdfService
+- Objet de période : PeriodeConsommation
+- Repository : ConsommationRepository
+- Technologie d’accès aux données : JdbcTemplate avec deux requêtes SQL
+- DTO principal : ConsommationResponse
+- DTO produit : ConsommationProduitResponse
+- DTO ingrédient : ConsommationIngredientResponse
+
+
+4. ENDPOINTS ET PARAMÈTRES
+-------------------------
+
+Consultation JSON :
+
+GET /api/consommations?debut={date}&fin={date}
+
+Téléchargement du PDF :
+
+GET /api/consommations/rapport.pdf?debut={date}&fin={date}
+
+Les paramètres exacts sont :
+
+- debut : date ISO au format yyyy-MM-dd
+- fin : date ISO au format yyyy-MM-dd
+
+Les deux paramètres sont convertis en LocalDate.
+
+- Date absente ou non convertible : HTTP 400.
+- Date de fin antérieure à la date de début : HTTP 409.
+- Période supérieure à 366 jours calendaires inclusifs : HTTP 409.
+
+
+5. RÈGLE DE SÉLECTION DES COMMANDES
+----------------------------------
+
+Les commandes sont sélectionnées selon leur champ confirmee_le et les statuts suivants :
+
+- CONFIRMEE
+- EN_PREPARATION
+- PRETE
+- PAYEE
+
+Les statuts BROUILLON et ANNULEE sont exclus.
+
+Le filtre SQL appliqué est équivalent à :
+
+confirmee_le >= début de la période
+confirmee_le < lendemain de la date de fin
+statut IN ('CONFIRMEE', 'EN_PREPARATION', 'PRETE', 'PAYEE')
+
+
+6. CALCUL DES PRODUITS CONSOMMÉS
+-------------------------------
+
+La requête additionne les quantités des lignes de commande :
+
+sum(l.quantite)
+group by p.id, p.nom
+
+La quantité totale d’un produit correspond à la somme de ses quantités dans toutes les
+lignes des commandes retenues. Un produit présent dans plusieurs commandes apparaît donc
+une seule fois avec une quantité cumulée.
+
+
+7. CALCUL DES INGRÉDIENTS UTILISÉS
+---------------------------------
+
+La requête utilise les recettes enregistrées dans produit_ingredients et calcule :
+
+sum(pi.quantite * l.quantite)
+group by i.id, i.nom, i.unite
+
+Pour chaque produit commandé, la quantité de chaque ingrédient prévue dans la recette est
+multipliée par la quantité commandée du produit. Un ingrédient partagé entre plusieurs
+produits est regroupé grâce au GROUP BY sur son identifiant, son nom et son unité.
+
+Point factuel important : le rapport utilise la recette actuellement enregistrée dans
+produit_ingredients. Il n’utilise pas un instantané historique de la recette au moment où
+la commande a été confirmée.
+
+
+8. GESTION DES UNITÉS
+---------------------
+
+Les unités backend sont celles de l’énumération UniteMesure :
+
+- GRAMME
+- KILOGRAMME
+- MILLILITRE
+- LITRE
+- UNITE
+
+Les quantités d’ingrédients sont retournées en BigDecimal avec une échelle de trois
+décimales. Les quantités de produits sont entières et représentées par un long.
+
+Le frontend traduit les unités en :
+
+- GRAMME -> g
+- KILOGRAMME -> kg
+- MILLILITRE -> ml
+- LITRE -> L
+- UNITE -> unité
+
+L’écran affiche au maximum trois décimales. Le PDF affiche les quantités d’ingrédients avec
+trois décimales.
+
+La migration V13 existante impose des quantités entières aux ingrédients dont l’unité est
+UNITE. Cette migration précède la fonctionnalité Consommation et ne lui appartient pas.
+
+
+9. INTERPRÉTATION DES DATES
+---------------------------
+
+PeriodeConsommation transforme la période en UTC :
+
+- début : date debut à 00:00:00 UTC, incluse ;
+- fin exclusive : lendemain de la date fin à 00:00:00 UTC.
+
+La condition SQL est donc :
+
+confirmee_le >= debutInstant
+confirmee_le < finExclusive
+
+Toute la journée correspondant à la date de fin est incluse.
+
+
+10. SOURCE UNIQUE DE CALCUL
+---------------------------
+
+ConsommationService constitue la source unique de calcul :
+
+- l’endpoint JSON appelle ConsommationService.consulter(...) ;
+- ConsommationPdfService appelle également ConsommationService.consulter(...).
+
+L’écran et le PDF obtiennent donc leurs données à partir du même service métier et des
+mêmes requêtes.
+
+
+11. GÉNÉRATION DU PDF
+---------------------
+
+Le service exact est ConsommationPdfService.
+
+La bibliothèque utilisée est Apache PDFBox 3.0.8. Elle existait déjà dans le projet pour
+FacturePdfService et les tests de paiement. Aucune nouvelle dépendance PDF n’a été ajoutée
+par la fonctionnalité Consommation.
+
+Le nom du fichier généré est :
+
+rapport-consommation-{debut}-au-{fin}.pdf
+
+Exemple :
+
+rapport-consommation-2026-08-01-au-2026-08-31.pdf
+
+La réponse possède :
+
+- Content-Type: application/pdf
+- Content-Disposition: attachment
+
+
+12. SÉCURITÉ BACKEND
+--------------------
+
+Les endpoints sont couverts par la règle générale Spring Security :
+
+.anyRequest().authenticated()
+
+Les contrôles de rôles sont appliqués aux services avec l’annotation exacte :
+
+@PreAuthorize("hasAnyRole('ADMINISTRATEUR','GERANT')")
+
+Cette annotation se trouve sur :
+
+- ConsommationService.consulter(...)
+- ConsommationPdfService.generer(...)
+
+Il n’existe pas d’annotation @PreAuthorize directement sur ConsommationController.
+
+Les tests confirment les comportements suivants :
+
+- utilisateur non authentifié : HTTP 401 ;
+- rôle SERVEUR : HTTP 403 ;
+- rôle ADMINISTRATEUR : HTTP 200 ;
+- rôle GERANT : HTTP 200.
+
+
+13. ROUTE ET SÉCURITÉ FRONTEND
+------------------------------
+
+La route React exacte est :
+
+/consommation
+
+Sa configuration contient :
+
+rolesAutorises: ['ADMINISTRATEUR', 'GERANT']
+permissionsRequises: []
+
+Cette configuration masque le lien du menu pour les autres rôles. Un accès direct avec un
+rôle non autorisé rend ForbiddenPage. La protection frontend améliore l’interface, tandis
+que le contrôle de sécurité faisant autorité reste celui du backend.
+
+
+14. COMPOSANTS ET API FRONTEND
+------------------------------
+
+ConsommationPage :
+
+- initialise par défaut les trente derniers jours, aujourd’hui inclus ;
+- réutilise PeriodeForm et validerPeriode ;
+- charge les produits et ingrédients ;
+- présente deux tableaux ;
+- gère le chargement, les erreurs, le cas vide et le téléchargement PDF.
+
+consommationApi :
+
+- consulter(...) utilise apiRequest pour l’endpoint JSON ;
+- telechargerPdf(...) utilise apiBlob pour l’endpoint PDF ;
+- les cookies de session sont inclus par le client API commun.
+
+Téléchargement du PDF :
+
+1. Le Blob est reçu par apiBlob.
+2. Une URL locale est créée avec URL.createObjectURL.
+3. Un élément HTML <a download> est construit et cliqué.
+4. L’URL locale est libérée avec URL.revokeObjectURL.
+
+
+15. COMPORTEMENT SANS DONNÉES
+-----------------------------
+
+Lorsque la période ne contient aucune consommation :
+
+- le backend retourne HTTP 200 ;
+- produits vaut [] ;
+- ingredients vaut [] ;
+- l’écran affiche « Aucune consommation enregistrée pour cette période. » ;
+- le bouton de téléchargement PDF reste disponible ;
+- le PDF est produit et contient le même message d’absence de données.
+
+
+16. TESTS BACKEND AJOUTÉS
+-------------------------
+
+ConsommationIntegrationTest contient cinq tests :
+
+1. Calcul des produits et ingrédients avec exclusion des brouillons et annulations.
+2. Addition d’un même produit présent dans plusieurs commandes.
+3. Validation des dates, de la période maximale et du cas sans données.
+4. Vérification des réponses 401, 403 et des rôles autorisés.
+5. Validation du contenu, du nom, des en-têtes et du cas vide du PDF.
+
+Résultat ciblé lu dans le rapport Surefire :
+
+Tests run: 5, Failures: 0, Errors: 0, Skipped: 0
+
+
+17. TESTS FRONTEND AJOUTÉS
+--------------------------
+
+ConsommationPage.test.tsx vérifie :
+
+- le menu et l’accès pour ADMINISTRATEUR ;
+- le menu et l’accès pour GERANT ;
+- le masquage et le refus pour SERVEUR ;
+- la validation de la période ;
+- l’affichage d’une période vide ;
+- le téléchargement et les dates transmises au PDF.
+
+Résultat ciblé :
+
+Test Files  1 passed (1)
+Tests       6 passed (6)
+Failed      0
+Skipped     0
+
+
+18. RÉSULTATS DES VÉRIFICATIONS
+-------------------------------
+
+TESTS BACKEND
+
+Commande :
+
+./mvnw test
+
+Résultat :
+
+Tests run: 114
+Passed: 114
+Failures: 0
+Errors: 0
+Skipped: 0
+BUILD SUCCESS
+
+Les 114 tests ont réellement été exécutés avec Docker/Testcontainers actif.
+
+
+TESTS FRONTEND
+
+La suite a été exécutée sur une copie exacte du frontend dans /private/tmp, installée avec
+npm ci --offline --ignore-scripts, afin d’éviter l’externalisation iCloud des workers.
+
+Commande :
+
+npm test
+
+Résultat :
+
+Test Files  12 passed (12)
+Tests       104 passed (104)
+Failed      0
+Skipped     0
+
+Limite environnementale : lancée directement depuis le dossier original synchronisé,
+la commande npm test n’a produit aucun démarrage Vitest en 30 secondes et a été interrompue.
+Ce n’est pas un échec de test : la même source, copiée hors du dossier iCloud, passe 104/104.
+
+
+TYPECHECK FRONTEND
+
+Commande : npm run typecheck
+Résultat : réussite, aucune erreur TypeScript.
+
+
+LINT FRONTEND
+
+Commande : npm run lint
+Résultat : réussite, aucune erreur et aucun warning.
+
+
+BUILD BACKEND
+
+Commande : ./mvnw -DskipTests package
+Résultat : BUILD SUCCESS.
+
+Le JAR Spring Boot a été produit dans backend/target.nosync.
+
+
+BUILD FRONTEND
+
+Commande : npm run build
+Résultat : réussite.
+
+- Vite 8.2.0
+- 63 modules transformés
+- Durée du build Vite : 1,02 s
+- dist/index.html : 0,50 kB, gzip 0,32 kB
+- CSS : 32,68 kB, gzip 7,03 kB
+- JavaScript : 387,29 kB, gzip 100,39 kB
+
+
+19. MIGRATION FLYWAY
+--------------------
+
+Aucune migration Flyway n’a été ajoutée pour la fonctionnalité Consommation.
+
+Aucune modification du schéma de base de données n’était nécessaire. Le calcul exploite
+les tables existantes :
+
+- commandes
+- lignes_commande
+- produits
+- produit_ingredients
+- ingredients
+
+La migration actuelle la plus récente,
+V13__enforce_whole_quantities_for_unit_ingredients.sql, concerne une évolution antérieure
+sur les ingrédients mesurés en unités.
+
+
+20. NOUVELLES DÉPENDANCES
+-------------------------
+
+Aucune nouvelle dépendance n’a été ajoutée pour cette fonctionnalité.
+
+- PDFBox 3.0.8 était déjà utilisé pour les factures.
+- Aucun package frontend supplémentaire n’a été introduit.
+- package.json, package-lock.json et pom.xml sont antérieurs à l’ajout des fichiers
+  Consommation.
+
+
+INFORMATIONS RECOMMANDÉES POUR LE RAPPORT DE STAGE
+==================================================
+
+1. La fonctionnalité Consommation fournit une synthèse des ventes et des ingrédients utilisés sur une période.
+2. Elle expose un endpoint JSON et un endpoint de génération PDF.
+3. Les dates sont transmises au format ISO avec les paramètres debut et fin.
+4. La période est interprétée en UTC et inclut entièrement la journée de fin.
+5. Seules les commandes CONFIRMEE, EN_PREPARATION, PRETE et PAYEE sont comptabilisées.
+6. Les brouillons et les commandes annulées sont exclus.
+7. Les produits sont regroupés et additionnés à partir des lignes de commande.
+8. Les ingrédients sont calculés en multipliant les quantités des recettes par les quantités commandées.
+9. Un ingrédient partagé entre plusieurs produits est agrégé dans une seule ligne.
+10. Les unités gérées sont le gramme, kilogramme, millilitre, litre et unité.
+11. ConsommationService centralise le calcul utilisé par l’interface et par le PDF.
+12. Le PDF est produit avec Apache PDFBox et reprend les mêmes données que l’écran.
+13. L’accès est réservé aux rôles ADMINISTRATEUR et GERANT.
+14. Le frontend masque la route aux autres rôles, tandis que le backend garantit le contrôle d’accès.
+15. La fonctionnalité gère explicitement les périodes sans consommation.
+16. Elle n’a nécessité ni nouvelle table, ni migration Flyway, ni nouvelle dépendance.
+17. Les vérifications donnent 114 tests backend et 104 tests frontend réussis.
+
+
+CHECKLIST FINALE
+===============
+
+- Aucun code backend ou frontend modifié pendant l’analyse : oui.
+- Aucun commit Git créé : oui.
+- Tests backend : 114/114 réussis.
+- Tests frontend sur copie exacte hors iCloud : 104/104 réussis.
+- Typecheck frontend : réussi.
+- Lint frontend : réussi sans warning.
+- Build backend : réussi.
+- Build frontend : réussi.
+- Limite restante : démarrage Vitest non concluant depuis le chemin original dans
+  l’environnement Codex, alors que la copie exacte hors iCloud passe entièrement.
